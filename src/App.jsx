@@ -394,6 +394,36 @@ Balas HANYA dengan nama kategori persis seperti di daftar, tanpa tanda kutip, ta
 const formatRp  = (n) => "Rp " + Math.abs(Number(n)).toLocaleString("id-ID");
 const today     = () => new Date().toISOString().split("T")[0];
 
+// Label tanggal relatif untuk sticky header di list transaksi —
+// "Hari Ini" / "Kemarin" terasa lebih personal daripada tanggal mentah.
+function labelTanggalRelatif(tanggalStr) {
+  const tgl = new Date(tanggalStr);
+  const skrg = new Date();
+  const kemarin = new Date(skrg);
+  kemarin.setDate(skrg.getDate() - 1);
+
+  const sama = (a, b) => a.toDateString() === b.toDateString();
+  if (sama(tgl, skrg)) return "Hari Ini";
+  if (sama(tgl, kemarin)) return "Kemarin";
+  return tgl.toLocaleDateString("id-ID", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+}
+
+// Kelompokkan array transaksi (sudah terurut) berdasarkan tanggalnya,
+// menghasilkan array flat berselang-seling [header, item, item, header, item, ...]
+// supaya gampang di-render dengan sticky header per grup.
+function kelompokkanPerTanggal(items) {
+  const hasil = [];
+  let tanggalTerakhir = null;
+  for (const item of items) {
+    if (item.tanggal !== tanggalTerakhir) {
+      hasil.push({ jenis: "header", tanggal: item.tanggal });
+      tanggalTerakhir = item.tanggal;
+    }
+    hasil.push({ jenis: "item", data: item });
+  }
+  return hasil;
+}
+
 // ── Helper: Export data ke file CSV (bisa dibuka Excel/Sheets) ──
 function exportKeCSV(transaksi, dompetList, namaFile) {
   const header = ["Tanggal", "Tipe", "Kategori", "Jumlah", "Catatan", "Dompet"];
@@ -744,8 +774,104 @@ function GlobalStyles({ dark }) {
       ::-webkit-scrollbar { width: 6px; height: 6px; }
       ::-webkit-scrollbar-track { background: transparent; }
       ::-webkit-scrollbar-thumb { background: ${dark ? "#33333f" : "#DDD7C4"}; border-radius: 99px; }
+
+      /* ══════════ Detail Kelas Atas ══════════ */
+
+      /* Noise/grain texture — sangat tipis, dilapiskan lewat SVG data-URI supaya
+         background flat terasa "material" (kertas/kanvas), bukan plastik digital.
+         Blend mode "overlay" membuatnya nyaris tak terlihat langsung tapi terasa
+         di persepsi keseluruhan. */
+      body::before {
+        content: '';
+        position: fixed; inset: 0; z-index: 9998; pointer-events: none;
+        opacity: ${dark ? 0.05 : 0.035};
+        mix-blend-mode: ${dark ? "overlay" : "multiply"};
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      }
+
+      /* Custom text selection — gold, bukan biru default browser */
+      ::selection {
+        background: rgba(212,160,23,0.35);
+        color: ${dark ? "#FDFCF8" : "#20201C"};
+      }
+
+      /* Focus ring bertema — sudut siku emas untuk navigasi keyboard (Tab),
+         menggantikan ring biru bawaan browser tanpa menghilangkan aksesibilitas. */
+      :focus-visible {
+        outline: 2px solid ${ACCENT_GOLD_L};
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+      button:focus-visible, a:focus-visible {
+        box-shadow: 0 0 0 3px ${dark ? "rgba(212,160,23,0.25)" : "rgba(184,134,11,0.18)"};
+      }
+
+      /* Inner shadow pada input aktif — kesan "cekungan kertas", cocok tema ledger */
+      input:focus, select:focus, textarea:focus {
+        box-shadow: inset 0 1px 3px ${dark ? "rgba(0,0,0,0.35)" : "rgba(32,32,28,0.06)"}, 0 0 0 3px ${dark ? "rgba(212,160,23,0.18)" : "rgba(184,134,11,0.12)"} !important;
+      }
+
+      /* Sticky section header — dipakai untuk pengelompokan tanggal di list panjang */
+      .sticky-section-header {
+        position: sticky; top: 0; z-index: 5;
+        backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+        background: ${dark ? "rgba(20,20,28,0.85)" : "rgba(247,245,239,0.88)"};
+      }
+
+      /* Drop cap — huruf pertama dibesarkan, gaya editorial klasik untuk insight AI */
+      .drop-cap::first-letter {
+        font-family: ${`'Fraunces', 'Georgia', serif`};
+        font-size: 2.6em;
+        font-weight: 600;
+        float: left;
+        line-height: 0.8;
+        margin: 0.03em 0.06em 0 0;
+        color: ${ACCENT_GOLD_L};
+      }
     `}</style>
   );
+}
+
+// ── Ilustrasi Empty State bertema (SVG ringan, bukan simbol garis polos) ──
+function EmptyIllustration({ jenis = "generic", size = 56 }) {
+  const { dark } = useTheme();
+  const t = tokens(dark);
+  const stroke = t.textMuted;
+
+  const ilustrasi = {
+    dompet: (
+      <svg width={size} height={size} viewBox="0 0 56 56" fill="none">
+        <rect x="8" y="16" width="40" height="28" rx="4" stroke={stroke} strokeWidth="2"/>
+        <path d="M8 24h40" stroke={stroke} strokeWidth="2"/>
+        <circle cx="38" cy="32" r="3" fill={ACCENT_GOLD_L} opacity="0.6"/>
+        <path d="M16 16V12a4 4 0 0 1 4-4h16a4 4 0 0 1 4 4v4" stroke={stroke} strokeWidth="2"/>
+      </svg>
+    ),
+    transaksi: (
+      <svg width={size} height={size} viewBox="0 0 56 56" fill="none">
+        <rect x="10" y="6" width="36" height="44" rx="3" stroke={stroke} strokeWidth="2"/>
+        <path d="M17 18h22M17 26h22M17 34h14" stroke={stroke} strokeWidth="2" strokeLinecap="round"/>
+        <circle cx="40" cy="40" r="8" fill={ACCENT_GOLD_L} opacity="0.15" stroke={ACCENT_GOLD_L} strokeWidth="1.5"/>
+        <path d="M40 37v6M37.5 40h5" stroke={ACCENT_GOLD_L} strokeWidth="1.5" strokeLinecap="round"/>
+      </svg>
+    ),
+    tabungan: (
+      <svg width={size} height={size} viewBox="0 0 56 56" fill="none">
+        <ellipse cx="28" cy="34" rx="18" ry="12" stroke={stroke} strokeWidth="2"/>
+        <path d="M14 30c0-8 6-16 16-16 6 0 10 3 12 6" stroke={stroke} strokeWidth="2" strokeLinecap="round"/>
+        <circle cx="38" cy="18" r="3" fill={ACCENT_GOLD_L} opacity="0.7"/>
+        <path d="M22 34h2M28 34h2M34 34h2" stroke={stroke} strokeWidth="2" strokeLinecap="round"/>
+      </svg>
+    ),
+    generic: (
+      <svg width={size} height={size} viewBox="0 0 56 56" fill="none">
+        <rect x="10" y="10" width="36" height="36" rx="8" stroke={stroke} strokeWidth="2" strokeDasharray="4 3"/>
+        <circle cx="28" cy="28" r="5" fill={ACCENT_GOLD_L} opacity="0.25"/>
+      </svg>
+    ),
+  };
+
+  return <div style={{ display:"inline-flex" }}>{ilustrasi[jenis] || ilustrasi.generic}</div>;
 }
 
 // ── Ripple click effect ───────────────────────────────────────
@@ -1667,17 +1793,23 @@ function SkeletonChart() {
 }
 
 // ── Empty state dengan ilustrasi ─────────────────────────────
-function EmptyState({ icon, title, subtitle }) {
+function EmptyState({ icon, title, subtitle, illustration }) {
   const { dark } = useTheme();
   const t = tokens(dark);
   return (
     <div style={{ textAlign: "center", padding: "52px 20px", animation: "fadeIn 0.4s ease-out" }}>
-      <div style={{
-        fontSize: 26, marginBottom: 16, display: "inline-flex", width:56, height:56,
-        alignItems:"center", justifyContent:"center", borderRadius:14,
-        background: t.surface2, color: t.textMuted, border:`1px solid ${t.borderSoft}`,
-        animation: "popIn 0.5s cubic-bezier(0.34,1.56,0.64,1)",
-      }}>{icon}</div>
+      {illustration ? (
+        <div style={{ marginBottom:16, animation: "popIn 0.5s cubic-bezier(0.34,1.56,0.64,1)" }}>
+          <EmptyIllustration jenis={illustration} />
+        </div>
+      ) : (
+        <div style={{
+          fontSize: 26, marginBottom: 16, display: "inline-flex", width:56, height:56,
+          alignItems:"center", justifyContent:"center", borderRadius:14,
+          background: t.surface2, color: t.textMuted, border:`1px solid ${t.borderSoft}`,
+          animation: "popIn 0.5s cubic-bezier(0.34,1.56,0.64,1)",
+        }}>{icon}</div>
+      )}
       <div style={{ fontFamily:t.fontDisplay, fontSize: 15.5, color: t.text, fontWeight: 600 }}>{title}</div>
       {subtitle && <div style={{ fontSize: 12.5, color: t.textMuted, marginTop: 5 }}>{subtitle}</div>}
     </div>
@@ -2111,7 +2243,7 @@ function TabSavings({ dompet, token, showToast }) {
       {loading ? (
         <><div className="skeleton" style={{ height: 140, borderRadius: 12, marginBottom: 12 }} /><div className="skeleton" style={{ height: 140, borderRadius: 12 }} /></>
       ) : goals.length === 0 ? (
-        <EmptyState icon="🎯" title="Belum ada target tabungan" subtitle="Buat target untuk liburan, DP rumah, atau tujuan lainnya" />
+        <EmptyState icon="🎯" illustration="tabungan" title="Belum ada target tabungan" subtitle="Buat target untuk liburan, DP rumah, atau tujuan lainnya" />
       ) : goals.map((g, i) => {
         const persen = Math.min(100, (g.terkumpul / g.target_nominal) * 100);
         const sisaNominal = Math.max(0, g.target_nominal - g.terkumpul);
@@ -2521,7 +2653,7 @@ function TabGoals({ goals, dompet, token, showToast, onGoalsChange }) {
       )}
 
       {goals.length === 0 ? (
-        <EmptyState icon="🎯" title="Belum ada target tabungan" subtitle="Buat target untuk liburan, dana darurat, atau impian lainnya" />
+        <EmptyState icon="🎯" illustration="tabungan" title="Belum ada target tabungan" subtitle="Buat target untuk liburan, dana darurat, atau impian lainnya" />
       ) : goals.map((g, i) => {
         const persen = Math.min(100, (g.terkumpul / g.target_nominal) * 100);
         const sisa = Math.max(0, g.target_nominal - g.terkumpul);
@@ -2837,7 +2969,7 @@ function TabDompet({ dompet, transaksi, token, showToast, onDompetChange, aktivD
 
       {/* Kartu per Dompet */}
       {dompet.length === 0 ? (
-        <EmptyState icon="◈" title="Belum ada dompet" subtitle="Buat dompet untuk mulai memisahkan saldo" />
+        <EmptyState icon="◈" illustration="dompet" title="Belum ada dompet" subtitle="Buat dompet untuk mulai memisahkan saldo" />
       ) : dompet.map((d,i) => {
         const saldo = saldoPerDompet[d.id] || 0;
         const txCount = transaksi.filter(tx=>tx.dompet_id===d.id).length;
@@ -3568,7 +3700,7 @@ Berikan 2-3 kalimat insight singkat dalam Bahasa Indonesia yang personal dan act
           )}
         </div>
         {insightAI ? (
-          <div style={{ fontSize:13, color:t.text, lineHeight:1.75 }}>{insightAI}</div>
+          <div className="drop-cap" style={{ fontSize:13, color:t.text, lineHeight:1.75 }}>{insightAI}</div>
         ) : (
           <div style={{ fontSize:12.5, color:t.textMuted, lineHeight:1.6 }}>
             Tap "Minta Analisis" untuk mendapat insight personal dari AI berdasarkan skor kamu di atas.
@@ -3665,20 +3797,32 @@ function TabPrediksi({ transaksi }) {
       {/* Hasil Prediksi */}
       {result && (
         <>
-          {/* Akurasi */}
-          <div style={{ display:"flex", gap:10, marginBottom:16 }}>
-            {[
-              { label:"Tren Linear", val:result.akurasi_linear },
-              { label:"Exp. Smoothing", val:result.akurasi_es },
-              { label:"Gabungan", val:result.akurasi_gabungan },
-            ].map((item, i) => (
-              <div key={i} style={{ flex:1, background:t.surface, borderRadius:12, padding:"14px 12px", boxShadow:t.cardShadow, border:`1px solid ${t.borderSoft}`, textAlign:"center" }}>
-                <div className="num-tabular" style={{ fontFamily:t.fontMono, fontSize:21, fontWeight:800, color:t.gold }}>
-                  <AnimatedNumber value={item.val} format={v => `${Math.round(v)}%`} duration={800} />
-                </div>
-                <div style={{ fontSize:10.5, color:t.textMuted, marginTop:3 }}>{item.label}</div>
+          {/* Akurasi — asymmetric grid: "Gabungan" (rekomendasi utama) lebih
+              menonjol, dua model pendukung lebih kecil di sampingnya */}
+          <div style={{ display:"flex", gap:10, marginBottom:16, alignItems:"stretch" }}>
+            <div style={{
+              flex:"0 0 42%", background:`linear-gradient(150deg, ${ACCENT_GOLD_L}, ${ACCENT_GOLD})`,
+              borderRadius:14, padding:"18px 16px", boxShadow:`0 6px 20px ${dark?"rgba(212,160,23,0.25)":"rgba(184,134,11,0.2)"}`,
+              textAlign:"center", display:"flex", flexDirection:"column", justifyContent:"center",
+            }}>
+              <div className="num-tabular" style={{ fontFamily:t.fontMono, fontSize:30, fontWeight:800, color:"#181820" }}>
+                <AnimatedNumber value={result.akurasi_gabungan} format={v => `${Math.round(v)}%`} duration={900} />
               </div>
-            ))}
+              <div style={{ fontSize:11, color:"#181820", opacity:0.75, marginTop:4, fontWeight:600 }}>Gabungan (rekomendasi)</div>
+            </div>
+            <div style={{ flex:1, display:"flex", flexDirection:"column", gap:10 }}>
+              {[
+                { label:"Tren Linear", val:result.akurasi_linear },
+                { label:"Exp. Smoothing", val:result.akurasi_es },
+              ].map((item, i) => (
+                <div key={i} style={{ flex:1, background:t.surface, borderRadius:11, padding:"10px 12px", boxShadow:t.cardShadow, border:`1px solid ${t.borderSoft}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                  <span style={{ fontSize:11, color:t.textMuted }}>{item.label}</span>
+                  <span className="num-tabular" style={{ fontFamily:t.fontMono, fontSize:15, fontWeight:700, color:t.text }}>
+                    <AnimatedNumber value={item.val} format={v => `${Math.round(v)}%`} duration={800} />
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Grafik Prediksi */}
@@ -3730,7 +3874,7 @@ function TabPrediksi({ transaksi }) {
           {/* Insight */}
           <div style={{ background: dark?"rgba(212,160,23,0.08)":"rgba(184,134,11,0.05)", borderRadius:12, padding:20, border:`1px solid ${dark?"rgba(212,160,23,0.2)":"rgba(184,134,11,0.15)"}` }}>
             <div style={{ fontFamily:t.fontDisplay, fontWeight:600, fontSize:14, color:t.gold, marginBottom:8 }}>Wawasan Otomatis</div>
-            <div style={{ fontSize:13, color:t.text, lineHeight:1.75 }}>{result.insight}</div>
+            <div className="drop-cap" style={{ fontSize:13, color:t.text, lineHeight:1.75 }}>{result.insight}</div>
           </div>
 
           <div style={{ fontSize:11, color:t.textMuted, textAlign:"center", marginTop:14 }}>
@@ -4613,42 +4757,52 @@ export default function App() {
                   {loading && transaksi.length===0 ? (
                     <><SkeletonCard /><SkeletonCard /><SkeletonCard /></>
                   ) : filtered.length===0 ? (
-                    <EmptyState icon="☰" title="Belum ada transaksi" subtitle="Klik 'Catat Transaksi' di atas untuk menambahkan" />
-                  ) : filtered.map((tx,i)=>(
-                    <div key={tx.id} className="list-item hover-lift" style={{
-                      animationDelay:`${Math.min(i*0.04,0.3)}s`, animationFillMode:"backwards",
+                    <EmptyState icon="☰" illustration="transaksi" title="Belum ada transaksi" subtitle="Klik 'Catat Transaksi' di atas untuk menambahkan" />
+                  ) : kelompokkanPerTanggal(filtered).map((entry, i) => (
+                    entry.jenis === "header" ? (
+                      <div key={`h-${entry.tanggal}-${i}`} className="sticky-section-header" style={{
+                        padding:"8px 4px", marginBottom:6, marginTop: i===0 ? 0 : 4,
+                        fontSize:11.5, fontWeight:700, color:th.textMuted,
+                        textTransform:"uppercase", letterSpacing:"0.05em",
+                      }}>
+                        {labelTanggalRelatif(entry.tanggal)}
+                      </div>
+                    ) : (
+                    <div key={entry.data.id} className="list-item hover-lift" style={{
+                      animationDelay:`${Math.min(i*0.03,0.3)}s`, animationFillMode:"backwards",
                       background:th.surface, borderRadius:11, padding:"14px 16px", marginBottom:8,
                       boxShadow:th.cardShadow, display:"flex", alignItems:"center", gap:12,
-                      border: tx._pending ? `1.5px dashed ${th.gold}` : `1px solid ${th.borderSoft}`,
-                      opacity: tx._pending ? 0.75 : 1,
+                      border: entry.data._pending ? `1.5px dashed ${th.gold}` : `1px solid ${th.borderSoft}`,
+                      opacity: entry.data._pending ? 0.75 : 1,
                     }}>
-                      <div style={{ fontSize:22 }}>{tx.is_transfer ? "↔️" : (ICONS[tx.kategori]||"📦")}</div>
+                      <div style={{ fontSize:22 }}>{entry.data.is_transfer ? "↔️" : (ICONS[entry.data.kategori]||"📦")}</div>
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontWeight:600, fontSize:14, color:th.text, display:"flex", alignItems:"center", gap:6 }}>
-                          {tx.kategori}
-                          {tx.is_transfer && <span style={{ fontSize:9.5, background:th.textMuted+"22", color:th.textMuted, padding:"1px 6px", borderRadius:5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.03em" }}>Transfer</span>}
-                          {tx._pending && <span style={{ fontSize:9.5, background:th.gold+"22", color:th.gold, padding:"1px 6px", borderRadius:5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.03em" }}>Menunggu sync</span>}
+                          {entry.data.kategori}
+                          {entry.data.is_transfer && <span style={{ fontSize:9.5, background:th.textMuted+"22", color:th.textMuted, padding:"1px 6px", borderRadius:5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.03em" }}>Transfer</span>}
+                          {entry.data._pending && <span style={{ fontSize:9.5, background:th.gold+"22", color:th.gold, padding:"1px 6px", borderRadius:5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.03em" }}>Menunggu sync</span>}
                         </div>
                         <div style={{ fontSize:12, color:th.textMuted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                          {tx.catatan||"—"} · {new Date(tx.tanggal).toLocaleDateString("id-ID",{day:"numeric",month:"short",year:"numeric"})}
+                          {entry.data.catatan||"—"}
                         </div>
-                        {tx.dompet_id && (() => {
-                          const d = dompet.find(d=>d.id===tx.dompet_id);
+                        {entry.data.dompet_id && (() => {
+                          const d = dompet.find(d=>d.id===entry.data.dompet_id);
                           return d ? <span style={{ fontSize:10, background:d.warna+"1c", color:d.warna, padding:"2px 7px", borderRadius:5, fontWeight:600, display:"inline-block", marginTop:4 }}>{d.ikon} {d.nama}</span> : null;
                         })()}
                       </div>
                       <div style={{ textAlign:"right" }}>
-                        <div className="num-tabular" style={{ fontFamily:th.fontMono, fontWeight:700, fontSize:14, color:tx.tipe==="pemasukan"?th.green:th.red }}>
-                          {tx.tipe==="pemasukan"?"+":"−"}{formatRp(tx.jumlah)}
+                        <div className="num-tabular" style={{ fontFamily:th.fontMono, fontWeight:700, fontSize:14, color:entry.data.tipe==="pemasukan"?th.green:th.red }}>
+                          {entry.data.tipe==="pemasukan"?"+":"−"}{formatRp(entry.data.jumlah)}
                         </div>
-                        {!tx._pending && (
+                        {!entry.data._pending && (
                           <div style={{ display:"flex", gap:6, marginTop:6, justifyContent:"flex-end" }}>
-                            <button className="btn-press" onClick={()=>handleEdit(tx)} style={{ fontSize:11.5, background:th.surface2, border:"none", borderRadius:5, padding:"3px 8px", cursor:"pointer", color:th.textSub, fontWeight:600 }}>Edit</button>
-                            <button className="btn-press" onClick={()=>handleDelete(tx.id)} style={{ fontSize:11.5, background: dark?"rgba(184,69,69,0.12)":"rgba(140,47,47,0.08)", border:"none", borderRadius:5, padding:"3px 8px", cursor:"pointer", color:th.red, fontWeight:600 }}>Hapus</button>
+                            <button className="btn-press" onClick={()=>handleEdit(entry.data)} style={{ fontSize:11.5, background:th.surface2, border:"none", borderRadius:5, padding:"3px 8px", cursor:"pointer", color:th.textSub, fontWeight:600 }}>Edit</button>
+                            <button className="btn-press" onClick={()=>handleDelete(entry.data.id)} style={{ fontSize:11.5, background: dark?"rgba(184,69,69,0.12)":"rgba(140,47,47,0.08)", border:"none", borderRadius:5, padding:"3px 8px", cursor:"pointer", color:th.red, fontWeight:600 }}>Hapus</button>
                           </div>
                         )}
                       </div>
                     </div>
+                    )
                   ))}
                 </div>
               )}
